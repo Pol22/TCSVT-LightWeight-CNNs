@@ -44,6 +44,15 @@ def NoiseEstimator(inputs):
     return x, y
 
 
+# def FCN(inputs):
+#     x = Conv2D(32, 3, padding='same', activation='relu')(inputs)
+#     x = Conv2D(32, 3, padding='same', activation='relu')(x)
+#     x = Conv2D(32, 3, padding='same', activation='relu')(x)
+#     x = Conv2D(32, 3, padding='same', activation='relu')(x)
+#     x = Conv2D(3, 3, padding='same', activation='relu')(x)
+#     return x
+
+
 def AIN_ResUNet(inputs, noise_map, kernel_size=3):
     conv1 = Conv2D(64, kernel_size, padding='same', activation='relu')(inputs)
     conv1 = AIN_ResBlock(conv1, noise_map, 64, kernel_size=kernel_size)
