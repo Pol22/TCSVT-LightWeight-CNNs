@@ -52,28 +52,24 @@ def ResBlock_reflect(inputs, filters, kernel_size=3, bn=False, skip=False):
 def ResNet(input_tensor, kernel_size=3):
     x = tf.keras.layers.Conv2D(
         32, kernel_size, strides=1, padding='same')(input_tensor)
-    # x = tf.keras.layers.LeakyReLU(alpha=0.02)(x)
     x = tf.keras.layers.PReLU(shared_axes=[1, 2])(x)
     x = ResBlock(x, filters=32, kernel_size=kernel_size)
-    last_64 = ResBlock(x, filters=32, kernel_size=kernel_size)
+    last_32 = ResBlock(x, filters=32, kernel_size=kernel_size)
 
     x = tf.keras.layers.Conv2D(
-        64, kernel_size, strides=2, padding='same')(last_64)
-    # x = tf.keras.layers.LeakyReLU(alpha=0.02)(x)
+        64, kernel_size, strides=2, padding='same')(last_32)
     x = tf.keras.layers.PReLU(shared_axes=[1, 2])(x)
     x = ResBlock(x, filters=64, kernel_size=kernel_size)
-    last_128 = ResBlock(x, filters=64, kernel_size=kernel_size)
+    last_64 = ResBlock(x, filters=64, kernel_size=kernel_size)
 
     x = tf.keras.layers.Conv2D(
-        128, kernel_size, strides=2, padding='same')(last_128)
-    # x = tf.keras.layers.LeakyReLU(alpha=0.02)(x)
+        128, kernel_size, strides=2, padding='same')(last_64)
     x = tf.keras.layers.PReLU(shared_axes=[1, 2])(x)
     x = ResBlock(x, filters=128, kernel_size=kernel_size)
-    last_256 = ResBlock(x, filters=128, kernel_size=kernel_size)
+    last_128 = ResBlock(x, filters=128, kernel_size=kernel_size)
 
     x = tf.keras.layers.Conv2D(
-        256, kernel_size, strides=2, padding='same')(last_256)
-    # x = tf.keras.layers.LeakyReLU(alpha=0.02)(x)
+        256, kernel_size, strides=2, padding='same')(last_128)
     x = tf.keras.layers.PReLU(shared_axes=[1, 2])(x)
     x = ResBlock(x, filters=256, kernel_size=kernel_size)
     x = ResBlock(x, filters=256, kernel_size=kernel_size)
@@ -81,35 +77,34 @@ def ResNet(input_tensor, kernel_size=3):
     x = ResBlock(x, filters=256, kernel_size=kernel_size)
 
     x = tf.keras.layers.UpSampling2D(interpolation='bilinear')(x)
+    x = tf.concat([x, last_128], axis=3)
     x = tf.keras.layers.Conv2D(
         128, kernel_size, strides=1, padding='same')(x)
-    # x = tf.keras.layers.LeakyReLU(alpha=0.02)(x)
     x = tf.keras.layers.PReLU(shared_axes=[1, 2])(x)
-    x += last_256
+    # x += last_128
     x = ResBlock(x, filters=128, kernel_size=kernel_size)
     x = ResBlock(x, filters=128, kernel_size=kernel_size)
 
     x = tf.keras.layers.UpSampling2D(interpolation='bilinear')(x)
+    x = tf.concat([x, last_64], axis=3)
     x = tf.keras.layers.Conv2D(
         64, kernel_size, strides=1, padding='same')(x)
-    # x = tf.keras.layers.LeakyReLU(alpha=0.02)(x)
     x = tf.keras.layers.PReLU(shared_axes=[1, 2])(x)
-    x += last_128
+    # x += last_64
     x = ResBlock(x, filters=64, kernel_size=kernel_size)
     x = ResBlock(x, filters=64, kernel_size=kernel_size)
 
     x = tf.keras.layers.UpSampling2D(interpolation='bilinear')(x)
+    x = tf.concat([x, last_32], axis=3)
     x = tf.keras.layers.Conv2D(
         32, kernel_size, strides=1, padding='same')(x)
-    # x = tf.keras.layers.LeakyReLU(alpha=0.02)(x)
     x = tf.keras.layers.PReLU(shared_axes=[1, 2])(x)
-    x += last_64
+    # x += last_32
     x = ResBlock(x, filters=32, kernel_size=kernel_size)
     x = ResBlock(x, filters=32, kernel_size=kernel_size)
 
     x = tf.keras.layers.Conv2D(
         32, kernel_size, strides=1, padding='same')(x)
-    # x = tf.keras.layers.LeakyReLU(alpha=0.02)(x)
     x = tf.keras.layers.PReLU(shared_axes=[1, 2])(x)
     out = tf.keras.layers.Conv2D(
         3, 1, strides=1, padding='same', activation='sigmoid')(x)
@@ -183,95 +178,3 @@ def ResNet_v2(input_tensor, kernel_size=3):
     out = tf.keras.layers.Conv2D(
         3, 1, strides=1, padding='same', activation='sigmoid')(x)
     return tf.keras.Model(inputs=input_tensor, outputs=out)
-
-
-def ChannelAttention(inputs, filters, ratio=16):
-    """
-        Inspired by https://arxiv.org/pdf/1807.02758v2.pdf
-    """
-    x = tf.reduce_mean(inputs, axis=[1, 2], keepdims=True)
-    x = tf.keras.layers.Conv2D(
-        filters=filters // ratio,
-        kernel_size=1,
-        strides=1,
-        padding='same',
-        activation='relu')(x)
-
-    x = tf.keras.layers.Conv2D(
-        filters=filters,
-        kernel_size=1,
-        strides=1,
-        padding='same',
-        activation='sigmoid')(x)
-
-    x = tf.keras.layers.Multiply([x, inputs])
-    return x
-
-
-def RCA_Block(inputs, filters, kernel_size=3, ratio=16):
-    x = tf.keras.layers.Conv2D(
-        filters=filters,
-        kernel_size=kernel_size,
-        strides=1,
-        padding='same',
-        activation='relu')(inputs)
-
-    x = tf.keras.layers.Conv2D(
-        filters=filters,
-        kernel_size=kernel_size,
-        strides=1,
-        padding='same',
-        activation=None)(x)
-
-    x = ChannelAttention(x, filters, ratio)
-
-    x += inputs
-    return x
-
-
-def ResidualGroup(inputs, filters, kernel_size=3, ratio=16, n_RCAB=20):
-    x = inputs
-    for _ in range(n_RCAB):
-        x = RCA_Block(x, filters, kernel_size, ratio)
-
-    x = tf.keras.layers.Conv2D(
-        filters=filters,
-        kernel_size=kernel_size,
-        strides=1,
-        padding='same',
-        activation=None)(x)
-
-    x += inputs
-    return x
-
-
-def MeanShifter(x, sign, rgb_mean=[0.5, 0.5, 0.5], rgb_range=1.0):
-    kernel = tf.constant(
-        shape=[1, 1, 3, 3],
-        value=tf.reshape(tf.eye(3), (1, 1, 3, 3)),
-        dtype=tf.float32)
-    bias = tf.constant(
-        shape=[3],
-        value=[ele * rgb_range * sign for ele in rgb_mean],
-        dtype=tf.float32)
-    
-    return tf.nn.conv2d(x, kernel, [1, 1, 1, 1], padding='same') + bias  
-
-
-def RCAN(inputs, filters=64, kernel_size=3, n_RG=10):
-    """
-        Residual Channel Attention Network (RCAN)
-    """
-    x = MeanShifter(inputs, sign=-1)
-    x = tf.keras.layers.Conv2D(filters, kernel_size, padding='same')(x)
-    long_skip = x
-
-    for i in range(n_RG):
-        x = ResidualGroup(x, filters, kernel_size)
-
-    x = tf.keras.layers.Conv2D(filters, kernel_size, padding='same')(x)
-    x += long_skip
-
-    x = tf.keras.layers.Conv2D(3, kernel_size, padding='same')(x)
-    out = MeanShifter(x, sign=1)
-    return tf.keras.Model(inputs=inputs, outputs=out)
