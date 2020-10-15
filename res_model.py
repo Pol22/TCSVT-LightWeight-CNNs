@@ -178,3 +178,175 @@ def ResNet_v2(input_tensor, kernel_size=3):
     out = tf.keras.layers.Conv2D(
         3, 1, strides=1, padding='same', activation='sigmoid')(x)
     return tf.keras.Model(inputs=input_tensor, outputs=out)
+
+
+def PixelAttention(inputs, features):
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=1,
+        padding='same',
+        activation='sigmoid'
+    )(inputs)
+    x = tf.keras.layers.Multiply()([inputs, x])
+    return x
+
+
+def PixelAttentionConv(inputs, features, kernel_size=3):
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=1,
+        padding='same',
+        activation='sigmoid'
+    )(inputs)
+
+    y = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=kernel_size,
+        padding='same',
+        use_bias=False
+    )(inputs)
+
+    out = tf.keras.layers.Multiply()([y, x])
+    out = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=kernel_size,
+        padding='same',
+        use_bias=False
+    )(out)
+    return out
+
+
+def SCPA(inputs, features, reduction=2):
+    '''
+        Self-Calibrated Pixel Attention
+
+        Inspired by https://github.com/zhaohengyuan1/PAN
+    '''
+    group_width = features // reduction
+    residual = inputs
+
+    out_a = tf.keras.layers.Conv2D(
+        features=group_width,
+        kernel_size=1,
+        padding='same',
+        use_bias=False
+    )(inputs)
+
+    out_b = tf.keras.layers.Conv2D(
+        features=group_width,
+        kernel_size=1,
+        padding='same',
+        use_bias=False
+    )(inputs)
+
+    out_a = tf.keras.layers.LeakyReLU(alpha=0.2)(out_a)
+    out_b = tf.keras.layers.LeakyReLU(alpha=0.2)(out_b)
+
+    out_a = tf.keras.layers.Conv2D(
+        features=group_width,
+        kernel_size=3,
+        padding='same',
+        use_bias=False
+    )(out_a)
+    out_b = PixelAttentionConv(out_b, group_width)
+
+    out_a = tf.keras.layers.LeakyReLU(alpha=0.2)(out_a)
+    out_b = tf.keras.layers.LeakyReLU(alpha=0.2)(out_b)
+
+    out = tf.concat([out_a, out_b], axis=3)
+    out = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=1,
+        padding='same',
+        use_bias=False
+    )(out)
+    out += residual
+    return out
+
+
+def UPA(inputs, features, size=2):
+    x = tf.keras.layers.UpSampling2D(
+        size=(size, size),
+        interpolation='nearest'
+    )(inputs)
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=3,
+        padding='same'
+    )(x)
+    x = PixelAttention(x, features)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=3,
+        padding='same'
+    )(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    return x
+
+
+def PAN(inputs, kernel_size=3, nb=16, features=64):
+    '''
+        Pixel Attention Network
+
+        Inspired by https://arxiv.org/pdf/2010.01073v1.pdf
+    '''
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=3,
+        padding='same'
+    )(inputs)
+    residual = x
+
+    for _ in range(nb):
+        x = SCPA(x, features)
+
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=3,
+        padding='same'
+    )(x)
+
+    x = x + residual
+
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=3,
+        padding='same'
+    )(x)
+    x = PixelAttention(x, features)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=3,
+        padding='same'
+    )(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=3,
+        padding='same'
+    )(x)
+    x = PixelAttention(x, features)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2D(
+        features=features,
+        kernel_size=3,
+        padding='same'
+    )(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    # last conv
+    x = tf.keras.layers.Conv2D(
+        features=3,
+        kernel_size=3,
+        padding='same'
+    )(x)
+
+    x = x + inputs
+    return x
+
+
+def PAN_UNet(inputs, kernel_size=3):
+    # TODO
+    pass
