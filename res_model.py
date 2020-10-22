@@ -350,3 +350,123 @@ def PAN(inputs, kernel_size=3, nb=16, features=64):
 def PAN_UNet(inputs, kernel_size=3):
     # TODO
     pass
+
+
+from tensorflow.keras.layers import Conv2D, GlobalAveragePooling2D
+from tensorflow.keras.layers import BatchNormalization, ReLU
+
+
+def ChannelAttention(inputs, filters, reduction=16):
+    x = tf.reduce_mean(inputs, axis=[1, 2], keepdims=True)
+    x = Conv2D(
+        filters=filters // reduction,
+        kernel_size=1,
+        padding='same',
+        activation='relu')(x)
+    x = Conv2D(
+        filters=filters,
+        kernel_size=1,
+        padding='same',
+        activation='sigmoid')(x)
+    return inputs * x
+
+
+def RCAB(inputs, filters, kernel_size=3, reduction=16, bias=False, bn=True):
+    # Residual Channel Attention Block (RCAB)
+    x = Conv2D(
+        filters=filters,
+        kernel_size=kernel_size,
+        padding='same',
+        use_bias=bias)(inputs)
+
+    if bn:
+        x = BatchNormalization()(x)
+
+    x = ReLU()(x)
+    x = Conv2D(
+        filters=filters,
+        kernel_size=kernel_size,
+        padding='same',
+        use_bias=bias)(x)
+
+    if bn:
+        x = BatchNormalization()(x)
+
+    x = ChannelAttention(x, filters, reduction)
+    return x + inputs
+
+
+def RCABP(inputs, filters, kernel_size=3, reduction=16, bias=False, bn=True):
+    # Residual Channel Attention Block with Projection (RCABP)
+    x = Conv2D(
+        filters=filters,
+        kernel_size=kernel_size,
+        padding='same',
+        use_bias=bias)(inputs)
+
+    if bn:
+        x = BatchNormalization()(x)
+
+    x = ReLU()(x)
+    x = Conv2D(
+        filters=filters,
+        kernel_size=kernel_size,
+        padding='same',
+        use_bias=bias)(x)
+
+    if bn:
+        x = BatchNormalization()(x)
+
+    x = ChannelAttention(x, filters, reduction)
+
+    projection = Conv2D(
+        filters=filters,
+        kernel_size=1,
+        padding='same',
+        use_bias=bias)(inputs)
+
+    return x + projection
+
+
+def ResidualGroup(inputs, filters, n_resblocks, kernel_size=3, reduction=16):
+    x = RCABP(inputs, filters, kernel_size, reduction, bias=True, bn=True)
+    for _ in range(n_resblocks - 1):
+        x = RCAB(x, filters, kernel_size, reduction, bias=True, bn=True)
+    x = tf.concat([inputs, x], axis=3)
+    return x
+
+
+def DRCA(inputs, kernel_size=3, filters=64, n_resgproups=5,
+         n_resblocks=36, reduction=16):
+    '''
+        DenseNet with Residual Channel Attention blocks (DRCA)
+
+        Inspired by https://github.com/dong-won-jang/DRCA
+    '''
+    x = Conv2D(
+        filters=filters,
+        kernel_size=kernel_size,
+        padding='same')(inputs)
+    residual = x
+
+    for _ in range(n_resgproups):
+        x = ResidualGroup(x, filters, n_resblocks, kernel_size, reduction)
+
+    x = Conv2D(
+        filters=filters,
+        kernel_size=1,
+        padding='same')(x)
+
+    x += residual
+
+    x = Conv2D(
+        filters=filters,
+        kernel_size=kernel_size,
+        padding='same',
+        activation='relu')(x)
+    x = Conv2D(
+        filters=3,
+        kernel_size=kernel_size,
+        padding='same',
+        activation='sigmoid')(x)
+    return tf.keras.Model(inputs=inputs, outputs=x)
